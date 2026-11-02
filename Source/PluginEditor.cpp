@@ -5,17 +5,17 @@ using juce::String;
 
 static String U (const char* s) { return String::fromUTF8 (s); }
 
-static const char* helpPol   = "Polarité (souvent appelée « inversion de phase ») : retourne le signal, les crêtes deviennent des creux. "
-                               "Caisse claire dessus / dessous, kick in / out : choisissez la position où le grave est le plus plein.";
-static const char* helpSl    = "Décalage : vers la droite le son arrive plus tard, vers la gauche plus tôt (jusqu'à 10 ms, ≈ 3,4 m). "
-                               "1 ms ≈ 34 cm : réalignez deux micros placés à des distances différentes. "
-                               "Maj = réglage fin, flèches = pas à pas, double-clic = 0.";
-static const char* helpVal   = "Cliquez pour taper une valeur : « 48 » (unité choisie), « 1,5 ms », « 72 éch. », « 250 µs » ou une distance « 34 cm ».";
-static const char* helpLink  = "Link : G et D réglés ensemble (même décalage, même polarité). Désactivez-le pour régler chaque canal séparément.";
-static const char* helpUnit  = "Unité du décalage. Échantillons : pas d'un échantillon, le son est recopié tel quel. "
-                               "ms : pas de 0,01 ms (1 µs avec Maj), même entre deux échantillons (interpolation sinc, plate jusqu'à 20 kHz).";
-static const char* helpView  = "Temps : position de G et D par rapport au son d'origine. Somme mono : ce qu'on entend quand G et D sont additionnés.";
-static const char* helpMono  = "Piste mono : un seul canal (G).";
+static const char* helpPol   = "Polarity (often called \"phase invert\"): flips the signal, peaks become troughs. "
+                               "Snare top / bottom, kick in / out: choose the setting where the low end is fullest.";
+static const char* helpSl    = "Offset: to the right the sound arrives later, to the left earlier (up to 10 ms, ≈ 3.4 m). "
+                               "1 ms ≈ 34 cm: realign two mics placed at different distances. "
+                               "Shift = fine adjustment, arrows = step by step, double-click = 0.";
+static const char* helpVal   = "Click to type a value: \"48\" (current unit), \"1.5 ms\", \"72 smp\", \"250 µs\" or a distance \"34 cm\".";
+static const char* helpLink  = "Link: L and R set together (same offset, same polarity). Turn it off to set each channel separately.";
+static const char* helpUnit  = "Offset unit. Samples: one-sample steps, the sound is copied exactly. "
+                               "ms: steps of 0.01 ms (1 µs with Shift), even between two samples (sinc interpolation, flat up to 20 kHz).";
+static const char* helpView  = "Time: position of L and R compared with the original sound. Mono sum: what you hear when L and R are added together.";
+static const char* helpMono  = "Mono track: a single channel (L).";
 
 AudioLabPhaseEditor::AudioLabPhaseEditor (AudioLabPhaseProcessor& p)
     : AudioProcessorEditor (&p), proc (p), display (theme, p),
@@ -110,15 +110,15 @@ void AudioLabPhaseEditor::Content::paint (juce::Graphics& g)
     // noms des canaux
     g.setFont (ed.theme.ui (12, 600));
     g.setColour (p.text);
-    g.drawText ("G", juce::Rectangle<float> (24, (float) rows::y0, 14, (float) rows::h), juce::Justification::centred, false);
+    g.drawText ("L", juce::Rectangle<float> (24, (float) rows::y0, 14, (float) rows::h), juce::Justification::centred, false);
     g.setColour (ed.proc.isMono() ? p.soft : p.text);
-    g.drawText ("D", juce::Rectangle<float> (24, (float) rows::y1, 14, (float) rows::h), juce::Justification::centred, false);
+    g.drawText ("R", juce::Rectangle<float> (24, (float) rows::y1, 14, (float) rows::h), juce::Justification::centred, false);
     // noms des commandes, au-dessus des lignes
     g.setColour (p.text); g.setFont (ed.theme.ui (9, 600, 0.04f));
-    g.drawText (U ("POLARITÉ"), juce::Rectangle<float> (30, (float) rows::head, 64, 12), juce::Justification::centred, false);
+    g.drawText (U ("POLARITY"), juce::Rectangle<float> (30, (float) rows::head, 64, 12), juce::Justification::centred, false);
     g.drawText ("LINK", juce::Rectangle<float> (82, (float) rows::head, 40, 12), juce::Justification::centred, false);
-    g.drawText (U ("DÉCALAGE"), juce::Rectangle<float> (133, (float) rows::head, 120, 12), juce::Justification::centredLeft, false);
-    g.drawText (U ("UNITÉ"), juce::Rectangle<float> ((float) ed.unitSeg.getX() - 50, 216, 42, 28), juce::Justification::centredRight, false);
+    g.drawText (U ("OFFSET"), juce::Rectangle<float> (133, (float) rows::head, 120, 12), juce::Justification::centredLeft, false);
+    g.drawText (U ("UNIT"), juce::Rectangle<float> ((float) ed.unitSeg.getX() - 50, 216, 42, 28), juce::Justification::centredRight, false);
     // repères du curseur : −10 / 0 / +10 ms, sous la piste de D
     g.setColour (p.soft); g.setFont (ed.theme.ui (8));
     const float a = (float) ed.sl1.getX() + 9, b = (float) ed.sl1.getRight() - 9, y = (float) rows::y1 + rows::h + 1;

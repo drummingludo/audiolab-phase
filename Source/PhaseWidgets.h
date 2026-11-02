@@ -48,7 +48,7 @@ class PolButton : public juce::Component, public juce::SettableTooltipClient
 public:
     PolButton (Theme& t, AudioLabPhaseProcessor& p, int c) : theme (t), acc { p, c }
     {
-        setTitle (juce::String::fromUTF8 (c == 0 ? "Polarité G" : "Polarité D"));
+        setTitle (c == 0 ? "Polarity L" : "Polarity R");
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
         setWantsKeyboardFocus (true);
     }
@@ -105,7 +105,7 @@ class LinkButton : public juce::Component, public juce::SettableTooltipClient
 public:
     LinkButton (Theme& t, AudioLabPhaseProcessor& p) : theme (t), proc (p)
     {
-        setTitle ("Link G/D");
+        setTitle ("Link L/R");
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
         setWantsKeyboardFocus (true);
     }
@@ -176,7 +176,7 @@ class DelaySlider : public juce::Component, public juce::SettableTooltipClient
 public:
     DelaySlider (Theme& t, AudioLabPhaseProcessor& p, int c) : theme (t), acc { p, c }
     {
-        setTitle (juce::String::fromUTF8 (c == 0 ? "Décalage G" : "Décalage D"));
+        setTitle (c == 0 ? "Offset L" : "Offset R");
         setWantsKeyboardFocus (true);
         setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
     }
@@ -351,7 +351,7 @@ public:
         if (! isEnabled()) return;
         // valeur actuelle, sans unité, dans l'unité choisie
         const auto txt = acc.samplesUnit() ? juce::String (juce::roundToInt (acc.effSamples()))
-                                           : juce::String (std::round (acc.effMs() * 1000) / 1000, 3).replaceCharacter ('.', ',');
+                                           : juce::String (std::round (acc.effMs() * 1000) / 1000, 3);
         editor.setText (txt, false);
         editor.setVisible (true);
         editor.grabKeyboardFocus();

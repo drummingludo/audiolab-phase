@@ -18,7 +18,7 @@ inline constexpr float maxMs = (float) PhaseCore::maxMs;
 // ── Mise en forme des valeurs (virgule décimale, vrai signe moins) ──
 inline juce::String num (double v, int decimals)
 {
-    auto s = juce::String (std::abs (v), decimals).replaceCharacter ('.', ',');
+    auto s = juce::String (std::abs (v), decimals);
     return s;
 }
 inline juce::String sign (double v) { return v > 0 ? "+" : v < 0 ? juce::String::fromUTF8 ("−") : juce::String(); }
@@ -29,11 +29,11 @@ inline juce::String fmtMs (double ms, bool withUnit = true)
     const double r = std::round (ms * 1000.0) / 1000.0;
     return sign (r) + num (r, 3) + (withUnit ? " ms" : "");
 }
-// « +48 éch. » ; fractionnaire : « ≈ 55,13 éch. »
+// « +48 smp » ; fractionnaire : « ≈ 55.13 smp »
 inline juce::String fmtSamples (double s, bool withUnit = true)
 {
     const double r = std::round (s);
-    const juce::String u = withUnit ? juce::String::fromUTF8 (" éch.") : juce::String();
+    const juce::String u = withUnit ? juce::String (" smp") : juce::String();
     if (std::abs (s - r) < 1e-6) return sign (r) + num (r, 0) + u;
     return juce::String::fromUTF8 ("≈ ") + sign (s) + num (s, 2) + u;
 }
@@ -92,15 +92,15 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                 .withStringFromValueFunction ([] (float v, int) { return fmtMs (v); })
                 .withValueFromStringFunction ([] (const String& s) { double ms = 0; return parseValue (s, false, 48000, ms) ? (float) ms : 0.0f; })));
     };
-    delay (delL, "Décalage G");
-    delay (delR, "Décalage D");
+    delay (delL, "Offset L");
+    delay (delR, "Offset R");
     // choix à deux valeurs plutôt que « bool » : valeur toujours exactement 0 ou 1 (rappel de session exact)
-    const StringArray pol { "Normale", String::fromUTF8 ("Inversée") };
-    l.add (std::make_unique<AudioParameterChoice> (ParameterID { polL, 1 }, String::fromUTF8 ("Polarité G"), pol, 0));
-    l.add (std::make_unique<AudioParameterChoice> (ParameterID { polR, 1 }, String::fromUTF8 ("Polarité D"), pol, 0));
-    l.add (std::make_unique<AudioParameterChoice> (ParameterID { link, 1 }, "Link G/D", StringArray { "Off", "On" }, 1));
-    l.add (std::make_unique<AudioParameterChoice> (ParameterID { unit, 1 }, String::fromUTF8 ("Unité"),
-                                                   StringArray { String::fromUTF8 ("Échantillons"), "ms" }, 0));
+    const StringArray pol { "Normal", "Inverted" };
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { polL, 1 }, "Polarity L", pol, 0));
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { polR, 1 }, "Polarity R", pol, 0));
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { link, 1 }, "Link L/R", StringArray { "Off", "On" }, 1));
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { unit, 1 }, "Unit",
+                                                   StringArray { "Samples", "ms" }, 0));
     l.add (std::make_unique<AudioParameterBool> (ParameterID { bypass, 1 }, "Bypass", false));
     return l;
 }
@@ -108,12 +108,12 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 // Presets d'usage, proposés comme programmes « usine » au logiciel hôte (l'unité n'est pas modifiée)
 struct Preset { const char* name; float delL, delR; bool polL, polR, link; };
 inline constexpr Preset presets[] = {
-    { "Par défaut",                     0,    0, false, false, true  },
-    { "Polarité inversée",              0,    0, true,  true,  true  },
-    { "Test mono : D inversée",         0,    0, false, true,  false },
-    { "Retard 1 ms (34 cm)",            1,    1, false, false, true  },
-    { "Avance 1 ms (34 cm)",           -1,   -1, false, false, true  },
-    { "Élargissement Haas (D +8 ms)",   0,    8, false, false, false },
+    { "Default",                        0,    0, false, false, true  },
+    { "Polarity inverted",              0,    0, true,  true,  true  },
+    { "Mono test: R inverted",          0,    0, false, true,  false },
+    { "Later by 1 ms (34 cm)",          1,    1, false, false, true  },
+    { "Earlier by 1 ms (34 cm)",       -1,   -1, false, false, true  },
+    { "Haas widening (R +8 ms)",        0,    8, false, false, false },
 };
 inline constexpr int numPresets = (int) (sizeof (presets) / sizeof (presets[0]));
 } // namespace audiolab::params

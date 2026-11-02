@@ -25,26 +25,26 @@ PhaseDisplay::State PhaseDisplay::state() const
 
 String PhaseDisplay::combText (const State& st)
 {
-    if (st.bypass) return U ("Bypass : son d'origine, aucun creux");
+    if (st.bypass) return U ("Bypass: original sound, no dips");
     const double dt = (st.s[1] - st.s[0]) / st.fs;      // écart D − G en secondes
     const bool opposite = st.inv[0] != st.inv[1];
     if (std::abs (dt) < 1e-12)
-        return opposite ? U ("Annulation totale : G et D en opposition") : U ("Aucun creux : G et D en phase");
+        return opposite ? U ("Total cancellation: L and R in opposition") : U ("No dips: L and R in phase");
     const double spacing = 1.0 / std::abs (dt);
-    if (opposite) return U ("Graves annulés, puis un creux tous les ") + params::fmtHz (spacing);
-    return U ("Premier creux : ") + params::fmtHz (spacing / 2) + U (", puis tous les ") + params::fmtHz (spacing);
+    if (opposite) return U ("Lows cancelled, then a dip every ") + params::fmtHz (spacing);
+    return U ("First dip: ") + params::fmtHz (spacing / 2) + U (", then every ") + params::fmtHz (spacing);
 }
 
 void PhaseDisplay::updateTooltip()
 {
     const double lat = proc.latencySamples() * 1000.0 / proc.displayRate();
     if (view == 0)
-        setTooltip (U ("Temps : où sortent G et D par rapport au son d'origine (trait pointillé). Vers le haut : polarité normale ; "
-                       "vers le bas : inversée. Pour pouvoir avancer un son, le plugin annonce une latence fixe de ")
-                    + params::num (lat, 2) + U (" ms, que votre logiciel compense automatiquement."));
+        setTooltip (U ("Time: where L and R come out compared with the original sound (dotted line). Pointing up: normal polarity; "
+                       "pointing down: inverted. To be able to move a sound earlier, the plugin reports a fixed latency of ")
+                    + params::num (lat, 2) + U (" ms, which your software compensates automatically."));
     else
-        setTooltip (U ("Somme mono : ce que donne G + D (une enceinte, un téléphone, une console en mono). Un écart de temps entre G et D "
-                       "creuse des fréquences régulièrement espacées (filtre en peigne) ; une polarité inversée annule les graves."));
+        setTooltip (U ("Mono sum: what L + R gives (one speaker, a phone, a console in mono). A time offset between L and R "
+                       "cuts evenly spaced frequencies (comb filter); an inverted polarity cancels the lows."));
 }
 
 void PhaseDisplay::paint (juce::Graphics& g)
@@ -109,8 +109,8 @@ void PhaseDisplay::paintTime (juce::Graphics& g, const State& st)
             tick (s, room ? "+" + params::num (s, 0) : String());
             tick (-s, room ? params::sign (-1) + params::num (s, 0) : String());
         }
-        tick (lim, "+" + params::num (std::floor (lim + 1e-9), 0) + U (" éch."));
-        tick (-lim, params::sign (-1) + params::num (std::floor (lim + 1e-9), 0) + U (" éch."));
+        tick (lim, "+" + params::num (std::floor (lim + 1e-9), 0) + U (" smp"));
+        tick (-lim, params::sign (-1) + params::num (std::floor (lim + 1e-9), 0) + U (" smp"));
     }
     else
     {
@@ -137,18 +137,18 @@ void PhaseDisplay::paintTime (juce::Graphics& g, const State& st)
     g.setFont (theme.ui (10));
     g.setColour (p.soft);
     arrow (g, L + 5, 17, false, p.soft);
-    g.drawText ("Avance", juce::Rectangle<float> (L + 14, 10, 80, 14), juce::Justification::centredLeft, false);
-    g.drawText ("Retard", juce::Rectangle<float> (R - 94, 10, 80, 14), juce::Justification::centredRight, false);
+    g.drawText ("Earlier", juce::Rectangle<float> (L + 14, 10, 80, 14), juce::Justification::centredLeft, false);
+    g.drawText ("Later", juce::Rectangle<float> (R - 94, 10, 80, 14), juce::Justification::centredRight, false);
     arrow (g, R - 5, 17, true, p.soft);
     {
         String info;
-        if (st.bypass) info = U ("Bypass : son d'origine (aligné)");
+        if (st.bypass) info = U ("Bypass: original sound (aligned)");
         else if (st.mono) info = U ("Mono");
         else
         {
             const double dms = (st.s[1] - st.s[0]) * 1000.0 / st.fs;
-            info = std::abs (dms) < 1e-9 ? U ("G et D au même endroit")
-                                         : U ("Écart D − G : ") + params::fmtMs (dms) + U (" · ") + params::fmtDist (dms);
+            info = std::abs (dms) < 1e-9 ? U ("L and R aligned")
+                                         : U ("R − L offset: ") + params::fmtMs (dms) + U (" · ") + params::fmtDist (dms);
         }
         g.setColour (p.text2);
         drawTabular (g, theme, info, 10, 400, juce::Rectangle<float> (xc - 160, 10, 320, 14), juce::Justification::centred);
@@ -175,7 +175,7 @@ void PhaseDisplay::paintTime (juce::Graphics& g, const State& st)
         g.setColour (p.bg); g.fillEllipse (x - 5.5f, tip - 5.5f, 11, 11);
         g.setColour (col); g.fillEllipse (x - 4, tip - 4, 8, 8);
         // nom du canal à côté de la pastille (avec « Ø » si la polarité est inversée)
-        String name = st.bypass ? U ("Original") : st.mono ? String() : (same ? String ("G D") : String (c == 0 ? "G" : "D"));
+        String name = st.bypass ? U ("Original") : st.mono ? String() : (same ? String ("L R") : String (c == 0 ? "L" : "R"));
         if (inv) name = (name.isEmpty() ? String() : name + " ") + U ("Ø");
         if (name.isNotEmpty())
         {
@@ -271,7 +271,7 @@ void PhaseDisplay::paintSum (juce::Graphics& g, const State& st)
     // légendes
     g.setFont (theme.ui (10));
     g.setColour (p.soft);
-    g.drawText (U ("Somme mono G + D"), juce::Rectangle<float> (L, 10, 140, 14), juce::Justification::centredLeft, false);
+    g.drawText (U ("Mono sum L + R"), juce::Rectangle<float> (L, 10, 140, 14), juce::Justification::centredLeft, false);
     g.setColour (p.text2);
     drawTabular (g, theme, combText (st), 10, 400, juce::Rectangle<float> (L + 120, 10, R - L - 120, 14), juce::Justification::right);
 }

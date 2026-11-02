@@ -35,8 +35,8 @@ private:
     Content content { *this };
 
     audiolab::PhaseDisplay display;
-    audiolab::SegButtons viewSeg { theme, { "Temps", "Somme mono" } };
-    audiolab::SegButtons unitSeg { theme, { juce::String::fromUTF8 ("Échantillons"), "ms" } };
+    audiolab::SegButtons viewSeg { theme, { "Time", "Mono sum" } };
+    audiolab::SegButtons unitSeg { theme, { "Samples", "ms" } };
     audiolab::PolButton pol0, pol1;
     audiolab::LinkButton linkBtn;
     audiolab::DelaySlider sl0, sl1;

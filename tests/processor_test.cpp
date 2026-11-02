@@ -31,8 +31,8 @@ int main()
     }
     {
         P p;
-        const bool names = p.getNumPrograms() == 6 && p.getProgramName (0) == juce::String::fromUTF8 ("Par défaut")
-                           && p.getProgramName (5) == juce::String::fromUTF8 ("Élargissement Haas (D +8 ms)");
+        const bool names = p.getNumPrograms() == 6 && p.getProgramName (0) == juce::String ("Default")
+                           && p.getProgramName (5) == juce::String ("Haas widening (R +8 ms)");
         p.setCurrentProgram (5);
         const bool haas = p.getParam (params::link) < 0.5f && std::abs (p.getParam (params::delR) - 8) < 1e-5f && std::abs (p.getParam (params::delL)) < 1e-6f;
         p.setCurrentProgram (2);
@@ -146,14 +146,15 @@ int main()
         double v = 0; bool ok = true;
         ok &= params::parseValue (juce::String::fromUTF8 ("1,5"), false, 48000, v) && std::abs (v - 1.5) < 1e-12;
         ok &= params::parseValue (juce::String::fromUTF8 ("72"), true, 48000, v) && std::abs (v - 1.5) < 1e-12;
+        ok &= params::parseValue (juce::String::fromUTF8 ("72 smp"), false, 48000, v) && std::abs (v - 1.5) < 1e-12;
         ok &= params::parseValue (juce::String::fromUTF8 ("72 éch."), false, 48000, v) && std::abs (v - 1.5) < 1e-12;
         ok &= params::parseValue (juce::String::fromUTF8 ("−0.5 ms"), true, 48000, v) && std::abs (v + 0.5) < 1e-12;
         ok &= params::parseValue (juce::String::fromUTF8 ("250 µs"), true, 48000, v) && std::abs (v - 0.25) < 1e-12;
         ok &= params::parseValue (juce::String::fromUTF8 ("34,3 cm"), true, 48000, v) && std::abs (v - 1.0) < 1e-12;
         ok &= params::parseValue (juce::String::fromUTF8 ("25 ms"), true, 48000, v) && std::abs (v - 10.0) < 1e-12;
         ok &= ! params::parseValue (juce::String::fromUTF8 ("abc"), true, 48000, v);
-        ok &= params::fmtMs (-1.25) == juce::String::fromUTF8 ("−1,250 ms") && params::fmtSamples (48) == juce::String::fromUTF8 ("+48 éch.")
-              && params::fmtDist (1.0) == juce::String::fromUTF8 ("34 cm") && params::fmtHz (1000) == juce::String::fromUTF8 ("1,00 kHz");
+        ok &= params::fmtMs (-1.25) == juce::String::fromUTF8 ("−1.250 ms") && params::fmtSamples (48) == juce::String ("+48 smp")
+              && params::fmtDist (1.0) == juce::String ("34 cm") && params::fmtHz (1000) == juce::String ("1.00 kHz");
         check (ok, "saisie au clavier (« 1,5 », « 72 éch. », « −0.5 ms », « 250 µs », « 34,3 cm », limite à 10 ms) et affichage des valeurs");
     }
     std::printf ("\nRÉSULTAT : %s\n", OK ? "tout est conforme" : "ÉCHECS ci-dessus");
