@@ -204,9 +204,9 @@ public:
             const juce::Rectangle<float> f (std::min (x, xc), cy - 2, std::abs (x - xc), 4);
             if (en)
             {
-                const float boost = dragging ? 1.6f : 1.0f;
-                g.setColour (p.orange.withAlpha (0.12f * boost)); g.fillRoundedRectangle (f.expanded (2.5f), 4);
-                g.setColour (p.orange.withAlpha (0.22f * boost)); g.fillRoundedRectangle (f.expanded (1.2f), 3);
+                const float boost = dragging ? 1.5f : 1.0f;   // halo fin et discret
+                g.setColour (p.orange.withAlpha (0.05f * boost)); g.fillRoundedRectangle (f.expanded (1.6f), 3.6f);
+                g.setColour (p.orange.withAlpha (0.12f * boost)); g.fillRoundedRectangle (f.expanded (0.8f), 2.8f);
                 g.setGradientFill (juce::ColourGradient (p.orange0, xc, cy, p.orange, x, cy, false));
             }
             else g.setColour (p.soft);
