@@ -12,6 +12,10 @@ inline constexpr const char* polR   = "polR";     // polarité D inversée
 inline constexpr const char* link   = "link";     // G et D réglés ensemble
 inline constexpr const char* unit   = "unit";     // 0 = Échantillons, 1 = ms
 inline constexpr const char* bypass = "bypass";
+// 2.0.0
+inline constexpr const char* rotL   = "rotL";     // rotation de phase G, 0 … 360°
+inline constexpr const char* rotR   = "rotR";     // rotation de phase D
+inline constexpr const char* latMode = "latMode"; // 0 = Standard (avance + rotation), 1 = Zero (latence nulle)
 
 inline constexpr float maxMs = (float) PhaseCore::maxMs;
 
@@ -45,6 +49,25 @@ inline juce::String fmtDist (double ms)
     if (cm < 99.5) return num (std::round (cm), 0) + " cm";
     return num (cm / 100.0, 2) + " m";
 }
+// Angle : « 90° », « 12.5° » (0 … 360)
+inline juce::String fmtDeg (double d)
+{
+    d = std::fmod (d, 360.0); if (d < 0) d += 360;
+    const double r = std::round (d * 10) / 10;
+    if (r >= 360) return juce::String ("0") + juce::String::fromUTF8 ("\xc2\xb0");
+    return (std::abs (r - std::round (r)) < 1e-9 ? num (r, 0) : num (r, 1)) + juce::String::fromUTF8 ("\xc2\xb0");
+}
+// Lecture d'un angle tapé : « 90 », « 90° », « −90 » (= 270°), « 45.5 » ; false si illisible
+inline bool parseDeg (juce::String t, double& out)
+{
+    t = t.trim().replaceCharacter (',', '.').replace (juce::String::fromUTF8 ("\xe2\x88\x92"), "-")
+         .replace (juce::String::fromUTF8 ("\xc2\xb0"), "").removeCharacters (" ").toLowerCase();
+    if (t.endsWith ("deg")) t = t.dropLastCharacters (3);
+    if (t.isEmpty() || ! t.containsOnly ("+-.0123456789")) return false;
+    out = std::fmod (t.getDoubleValue(), 360.0); if (out < 0) out += 360;
+    return true;
+}
+
 // Fréquence : « 500 Hz », « 1,00 kHz », « 12,5 kHz »
 inline juce::String fmtHz (double f)
 {
@@ -102,10 +125,23 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     l.add (std::make_unique<AudioParameterChoice> (ParameterID { unit, 1 }, "Unit",
                                                    StringArray { "Samples", "ms" }, 0));
     l.add (std::make_unique<AudioParameterBool> (ParameterID { bypass, 1 }, "Bypass", false));
+    // 2.0.0 : rotation de phase par canal (0 … 360°, 0 = aucune), mode de latence
+    auto rot = [&] (const char* id, const char* name)
+    {
+        l.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 2 }, String::fromUTF8 (name),
+            NormalisableRange<float> (0.0f, 360.0f), 0.0f,
+            AudioParameterFloatAttributes().withLabel (String::fromUTF8 ("\xc2\xb0"))
+                .withStringFromValueFunction ([] (float v, int) { return fmtDeg (v); })
+                .withValueFromStringFunction ([] (const String& s) { double d = 0; return parseDeg (s, d) ? (float) d : 0.0f; })));
+    };
+    rot (rotL, "Rotation L");
+    rot (rotR, "Rotation R");
+    l.add (std::make_unique<AudioParameterChoice> (ParameterID { latMode, 2 }, "Latency", StringArray { "Standard", "Zero" }, 0));
     return l;
 }
 
-// Presets d'usage, proposés comme programmes « usine » au logiciel hôte (l'unité n'est pas modifiée)
+// Presets d'usage, proposés comme programmes « usine » au logiciel hôte (l'unité et le mode de latence ne sont pas modifiés ;
+// depuis la 2.0.0, chaque preset remet aussi la rotation à 0°)
 struct Preset { const char* name; float delL, delR; bool polL, polR, link; };
 inline constexpr Preset presets[] = {
     { "Default",                        0,    0, false, false, true  },

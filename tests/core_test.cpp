@@ -1,5 +1,7 @@
 // Banc de test du moteur PhaseCore (sans JUCE) : décalage exact, avance compensée, polarité,
 // lecture fractionnaire (mode ms), fondus sans clic, bypass aligné, indépendance de la taille des blocs.
+// 2.0.0 : latence plus longue (transformée de Hilbert de la rotation), lue avec getLatency() ; grille interne de 10 ns.
+// Rotation, mode Zero et alignement : tests/quality_test.cpp.
 // g++ -O2 -std=c++17 -ffp-contract=off -I Source tests/core_test.cpp -o tests/core_test && tests/core_test
 #include "PhaseCore.h"
 #include <cstdio>
@@ -86,7 +88,7 @@ int main()
         {
             PhaseCore c; c.prepare (fs);
             PhaseParams p; p.samples = false; p.delayMs[0] = ms; p.delayMs[1] = ms; c.setParams (p);
-            const double D = c.getLatency() + std::round (ms * 1000) * fs / 1e6;
+            const double D = c.getLatency() + std::round (ms * 1e5) * fs / 1e8;   // grille interne de 10 ns (2.0.0 ; 1 µs en 1.x)
             for (double f : { 20.0, 100.0, 1000.0, 5000.0, 10000.0, 15000.0, 18000.0, 20000.0 })
             {
                 const int n = (int) (fs * 0.5);
@@ -105,7 +107,7 @@ int main()
                 worstUs = std::max (worstUs, std::abs (dph / (2 * PI * f)) * 1e6);
             }
         }
-        char msg[200]; std::snprintf (msg, sizeof msg, "%6.0f Hz, unité ms (pas de 1 µs) : gain 20 Hz–20 kHz à ±%.4f dB, erreur de retard ≤ %.3f µs", fs, worstDb, worstUs);
+        char msg[200]; std::snprintf (msg, sizeof msg, "%6.0f Hz, unité ms (grille de 10 ns) : gain 20 Hz–20 kHz à ±%.4f dB, erreur de retard ≤ %.3f µs", fs, worstDb, worstUs);
         check (worstDb < 0.02 && worstUs < 0.05, msg);
     }
 

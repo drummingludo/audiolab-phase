@@ -117,6 +117,101 @@ private:
     int selected = 0, hover = -1;
     std::unique_ptr<juce::ParameterAttachment> attachment;
 };
+// ── Bouton (ex. « Align ») : fond « Capuchon », actif = #005F73 ──
+class PillButton : public juce::Button
+{
+public:
+    PillButton (Theme& t, juce::String label) : juce::Button (label), theme (t) {}
+    bool on = false;
+
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        const auto& p = theme.pal();
+        auto b = getLocalBounds().toFloat();
+        const bool en = isEnabled();
+        g.setColour (on ? p.tealSel : (over || down) && en ? p.railHi : p.cap); g.fillRoundedRectangle (b, 8);
+        g.setFont (theme.ui (12, on ? 500 : 400));
+        g.setColour (en ? p.text : p.soft);
+        g.drawText (getButtonText(), b, juce::Justification::centred, false);
+    }
+    float idealWidth() const { return textWidth (theme.ui (12, 500), getButtonText()) + 28; }
+
+private:
+    Theme& theme;
+};
+
+// ── Flèche d'ouverture (« Advanced settings ») : fermé = texte secondaire, ouvert = texte ──
+class Disclosure : public juce::Button
+{
+public:
+    Disclosure (Theme& t, juce::String label) : juce::Button (label), theme (t) {}
+    bool open = false;
+
+    void paintButton (juce::Graphics& g, bool over, bool) override
+    {
+        const auto& p = theme.pal();
+        const juce::Colour c = open || over ? p.text : p.text2;
+        const float x = 8, y = getHeight() * 0.5f - 6;   // boîte 12 × 12 du chevron
+        juce::Path ch;
+        if (open) { ch.startNewSubPath (x + 2.5f, y + 4.5f); ch.lineTo (x + 6, y + 8); ch.lineTo (x + 9.5f, y + 4.5f); }
+        else      { ch.startNewSubPath (x + 4.5f, y + 2.5f); ch.lineTo (x + 8, y + 6); ch.lineTo (x + 4.5f, y + 9.5f); }
+        g.setColour (c);
+        g.strokePath (ch, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setFont (theme.ui (12));
+        g.drawText (getButtonText(), juce::Rectangle<float> (26, 0, (float) getWidth() - 26, (float) getHeight()), juce::Justification::centredLeft, false);
+    }
+    float idealWidth() const { return 26 + textWidth (theme.ui (12), getButtonText()) + 8; }
+
+private:
+    Theme& theme;
+};
+
+// ── Message bref sur deux lignes (résultat du bouton Align) : titre 13 px 600, détail 11 px ──
+class Toast : public juce::Component, private juce::Timer
+{
+public:
+    explicit Toast (Theme& t) : theme (t) { setInterceptsMouseClicks (false, false); setAlpha (0); }
+    void show (const juce::String& t1, const juce::String& t2, bool ok, int holdMs = 4500)
+    {
+        title = t1; detail = t2; good = ok; hold = holdMs; shownAt = juce::Time::getMillisecondCounter();
+        setAlpha (1); setVisible (true); toFront (false); repaint(); startTimerHz (30);
+    }
+    const juce::String& shownTitle() const { return title; }
+    void paint (juce::Graphics& g) override
+    {
+        if (title.isEmpty()) return;
+        const auto& p = theme.pal();
+        const float w = std::min ((float) getWidth() - 32, std::max (textWidth (theme.ui (13, 600), title), textWidth (theme.ui (11), detail)) + 36);
+        const float h = detail.isEmpty() ? 34.0f : 50.0f;
+        auto r = juce::Rectangle<float> ((getWidth() - w) / 2, (float) getHeight() - h - 14, w, h);
+        juce::Path box; box.addRoundedRectangle (r, 10);
+        softShadow (g, box, juce::Colours::black.withAlpha (0.4f), 18, { 0, 6 });
+        g.setColour (p.surface); g.fillPath (box);
+        g.setColour (p.rail); g.strokePath (box, juce::PathStrokeType (1));
+        g.setColour (good ? p.teal2 : p.text); g.setFont (theme.ui (13, 600));
+        g.drawText (title, detail.isEmpty() ? r : r.withHeight (28).translated (0, 4), juce::Justification::centred, true);
+        if (detail.isNotEmpty())
+        {
+            g.setColour (p.text2); g.setFont (theme.ui (11));
+            g.drawText (detail, r.withTrimmedTop (26).withHeight (18).reduced (12, 0), juce::Justification::centred, true);
+        }
+    }
+
+private:
+    void timerCallback() override
+    {
+        const auto el = (int) (juce::Time::getMillisecondCounter() - shownAt);
+        if (hold <= 0) return;   // reste affiché (mesure en cours)
+        if (el > hold + 400) { setAlpha (0); stopTimer(); title.clear(); return; }
+        setAlpha (el > hold ? 1.0f - (float) (el - hold) / 400.0f : 1.0f);
+    }
+    Theme& theme;
+    juce::String title, detail;
+    bool good = false;
+    int hold = 4500;
+    juce::uint32 shownAt = 0;
+};
+
 // ── Bulles d'aide et menus ───────────────────────────────────────────────
 class ALLookAndFeel : public juce::LookAndFeel_V4
 {

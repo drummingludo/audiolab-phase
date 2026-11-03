@@ -19,8 +19,9 @@ struct ChannelAccess
     bool inverted() const { return polParam().getValue() > 0.5f; }
     bool samplesUnit() const { return proc.getParam (params::unit) < 0.5f; }
     double fs() const { return proc.displayRate(); }
-    // décalage réellement appliqué par le moteur
-    double effSamples() const { return PhaseCore::effectiveSamples (ms(), samplesUnit(), fs()); }
+    bool zero() const { return proc.zeroLatency(); }
+    // décalage réellement appliqué par le moteur (mode Zero : retards seulement, à l'échantillon entier)
+    double effSamples() const { return PhaseCore::effectiveSamples (ms(), samplesUnit(), fs(), zero()); }
     double effMs() const { return effSamples() * 1000.0 / fs(); }
 
     // Arrondi à la grille de l'unité : échantillon entier, 0,01 ms ou 1 µs (fin)
@@ -40,6 +41,17 @@ struct ChannelAccess
 
     void setMs (double v) { auto& p = delayParam(); p.setValueNotifyingHost (p.convertTo0to1 ((float) v)); }
     void setMsGesture (double v) { auto& p = delayParam(); p.beginChangeGesture(); setMs (v); p.endChangeGesture(); }
+
+    // 2.0.0 : rotation de phase (0 … 360°), même logique Link
+    juce::RangedAudioParameter& rotParam() const { return *proc.apvts.getParameter (chan == 1 && ! linked() ? params::rotR : params::rotL); }
+    double deg() const { auto& p = rotParam(); return p.convertFrom0to1 (p.getValue()); }
+    double effDeg() const { return PhaseCore::effectiveRotation (deg(), zero()); }
+    void setDeg (double v)
+    {
+        v = std::fmod (v, 360.0); if (v < 0) v += 360;
+        auto& p = rotParam(); p.setValueNotifyingHost (p.convertTo0to1 ((float) v));
+    }
+    void setDegGesture (double v) { auto& p = rotParam(); p.beginChangeGesture(); setDeg (v); p.endChangeGesture(); }
 };
 
 // ── Bouton de polarité Ø (36 × 36) : « Capuchon », inversé = #005F73 ──
@@ -368,6 +380,194 @@ private:
             acc.setMsGesture (acc.snap (v, true));
             if (onChange) onChange();
         }
+        editor.setVisible (false);
+        repaint();
+    }
+    Theme& theme;
+    ChannelAccess acc;
+    juce::TextEditor editor;
+    bool hover = false;
+};
+
+// ── Curseur de rotation (2.0.0) : piste 4 px « Rails », de 0° (à gauche) à 360°, partie colorée du départ au bouton
+//    en dégradé teal #0A9396 → #79AFB0 (forme du signal), graduations à 0 / 90 / 180 / 270 / 360°, bouton 18 px ──
+class RotSlider : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    RotSlider (Theme& t, AudioLabPhaseProcessor& p, int c) : theme (t), acc { p, c }
+    {
+        setTitle (c == 0 ? "Rotation L" : "Rotation R");
+        setWantsKeyboardFocus (true);
+        setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+    }
+    std::function<void()> onChange;
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto& p = theme.pal();
+        const bool en = isEnabled();
+        const float cy = getHeight() * 0.5f, ta = 9, tb = (float) getWidth() - 9;
+        const float x = ta + (float) (acc.effDeg() / 360.0) * (tb - ta);
+        g.setColour (p.mark2);
+        for (int k = 0; k <= 4; ++k)
+        {
+            const float tx = ta + k * (tb - ta) / 4;
+            g.fillRect (tx - 0.5f, cy + 5, 1.0f, k == 2 ? 6.0f : 4.0f);
+        }
+        g.setColour (hover && en ? p.railHi : p.rail); g.fillRoundedRectangle (0, cy - 2, (float) getWidth(), 4, 2);
+        if (x - ta > 0.3f)
+        {
+            const juce::Rectangle<float> f (ta, cy - 2, x - ta, 4);
+            if (en)
+            {
+                const float boost = dragging ? 1.5f : 1.0f;   // halo fin et discret
+                g.setColour (p.teal2.withAlpha (0.05f * boost)); g.fillRoundedRectangle (f.expanded (1.6f), 3.6f);
+                g.setColour (p.teal2.withAlpha (0.12f * boost)); g.fillRoundedRectangle (f.expanded (0.8f), 2.8f);
+                g.setGradientFill (juce::ColourGradient (p.teal, ta, cy, p.teal2, x, cy, false));
+            }
+            else g.setColour (p.soft);
+            g.fillRoundedRectangle (f, 2);
+        }
+        juce::Path th; th.addEllipse (x - 9, cy - 9, 18, 18);
+        if (en) softShadow (g, th, juce::Colours::black.withAlpha (0.5f), 6, { 0, 2 });
+        {
+            juce::Graphics::ScopedSaveState s (g);
+            g.reduceClipRegion (th);
+            g.setColour (juce::Colours::white.withAlpha (0.08f)); g.fillPath (th);
+            g.setColour (p.cap); g.fillEllipse (x - 9, cy - 8, 18, 18);
+        }
+        g.setColour (juce::Colours::black.withAlpha (0.4f)); g.strokePath (th, juce::PathStrokeType (0.5f));
+        if (focused) { g.setColour (p.teal2.withAlpha (0.5f)); g.drawEllipse (x - 10.5f, cy - 10.5f, 21, 21, 1.5f); }
+    }
+
+    void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { hover = false; repaint(); }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! isEnabled()) return;
+        acc.rotParam().beginChangeGesture(); dragging = true;
+        const float cy = getHeight() * 0.5f;
+        if (std::abs (e.position.x - xFor (acc.deg())) > 10 || std::abs (e.position.y - cy) > 12) set (degAt (e.position.x), false);
+        x0 = e.position.x; d0 = acc.deg(); repaint();
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! dragging) return;
+        const bool fine = e.mods.isShiftDown();
+        if (fine != lastFine) { x0 = e.position.x; d0 = acc.deg(); lastFine = fine; }
+        const double perPx = 360.0 / ((double) getWidth() - 18) * (fine ? 0.1 : 1.0);
+        set (juce::jlimit (0.0, 360.0, d0 + (e.position.x - x0) * perPx), fine);
+    }
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        if (dragging) { acc.rotParam().endChangeGesture(); dragging = false; lastFine = false; repaint(); }
+    }
+    void mouseDoubleClick (const juce::MouseEvent&) override { if (isEnabled()) { acc.setDegGesture (0); changed(); } }
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        const float d = std::abs (w.deltaY) > std::abs (w.deltaX) ? w.deltaY : -w.deltaX;
+        if (std::abs (d) < 1e-6f || ! isEnabled()) return;
+        const double st = e.mods.isShiftDown() ? 0.1 : 1.0;
+        acc.setDegGesture (snap (acc.deg() + (d > 0 ? st : -st), true)); changed();
+    }
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        const double st = k.getModifiers().isShiftDown() ? 0.1 : 1.0;
+        int dir = 0;
+        if (k.isKeyCode (juce::KeyPress::rightKey) || k.isKeyCode (juce::KeyPress::upKey)) dir = 1;
+        else if (k.isKeyCode (juce::KeyPress::leftKey) || k.isKeyCode (juce::KeyPress::downKey)) dir = -1;
+        else if (k.isKeyCode (juce::KeyPress::homeKey)) { acc.setDegGesture (0); changed(); return true; }
+        if (dir == 0) return false;
+        acc.setDegGesture (snap (acc.deg() + dir * st, true)); changed();
+        return true;
+    }
+    void focusGained (FocusChangeType c) override { focused = c == focusChangedByTabKey; repaint(); }
+    void focusLost (FocusChangeType) override { focused = false; repaint(); }
+
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        struct Value : juce::AccessibilityRangedNumericValueInterface
+        {
+            explicit Value (RotSlider& s) : sl (s) {}
+            bool isReadOnly() const override { return false; }
+            double getCurrentValue() const override { return sl.acc.deg(); }
+            void setValue (double v) override { sl.acc.setDegGesture (snap (v, true)); sl.changed(); }
+            AccessibleValueRange getRange() const override { return { { 0.0, 360.0 }, 1.0 }; }
+            RotSlider& sl;
+        };
+        return std::make_unique<juce::AccessibilityHandler> (*this, juce::AccessibilityRole::slider, juce::AccessibilityActions(),
+                                                              juce::AccessibilityHandler::Interfaces { std::make_unique<Value> (*this) });
+    }
+
+private:
+    // pas de 1° (0,1° en réglage fin) ; 360° = 0°
+    static double snap (double v, bool fine) { const double g = fine ? 10.0 : 1.0; v = std::round (v * g) / g; v = std::fmod (v, 360.0); return v < 0 ? v + 360 : v; }
+    float xFor (double d) const { return 9 + (float) (d / 360.0) * ((float) getWidth() - 18); }
+    double degAt (float x) const { return juce::jlimit (0.0, 360.0, (double) (x - 9) / ((double) getWidth() - 18) * 360.0); }
+    void set (double v, bool fine) { acc.setDeg (v >= 359.95 && ! fine ? 0.0 : snap (v, fine)); changed(); }
+    void changed() { repaint(); if (onChange) onChange(); }
+
+    Theme& theme;
+    ChannelAccess acc;
+    float x0 = 0;
+    double d0 = 0;
+    bool dragging = false, focused = false, hover = false, lastFine = false;
+};
+
+// ── Case de valeur de rotation : angle (14 px), puis l'angle équivalent négatif (11 px, gris doux) ; clic = saisie ──
+class RotValueBox : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    RotValueBox (Theme& t, AudioLabPhaseProcessor& p, int c) : theme (t), acc { p, c }
+    {
+        setMouseCursor (juce::MouseCursor::IBeamCursor);
+        addChildComponent (editor);
+        editor.setJustification (juce::Justification::centredRight);
+        editor.setIndents (6, 0);
+        editor.setFont (theme.ui (14, 600));
+        editor.setSelectAllWhenFocused (true);
+        editor.onReturnKey = [this] { commit(); };
+        editor.onEscapeKey = [this] { editor.setVisible (false); };
+        editor.onFocusLost = [this] { if (editor.isVisible()) commit(); };
+    }
+    std::function<void()> onChange;
+
+    void paint (juce::Graphics& g) override
+    {
+        if (editor.isVisible()) return;
+        const auto& p = theme.pal();
+        const bool en = isEnabled();
+        const double d = acc.effDeg();
+        const auto main = params::fmtDeg (d);
+        const auto other = d < 0.05 ? juce::String ("no rotation")
+                                    : juce::String ("= ") + params::sign (-1) + params::fmtDeg (360.0 - d);
+        const float w = (float) getWidth();
+        g.setColour (en ? p.text : p.soft);
+        drawTabular (g, theme, main, 14, 600, { 0, 1, w, 18 }, juce::Justification::right, -0.01f);
+        g.setColour (en ? p.soft : p.soft.withAlpha (0.6f));
+        drawTabular (g, theme, acc.zero() ? juce::String ("off in Zero mode") : other, 11, 400, { 0, 20, w, 14 }, juce::Justification::right);
+        if (hover && en) { const float tw = tabularWidth (theme, main, 14, 600, -0.01f); g.setColour (p.rail); g.fillRect (w - tw, 19.0f, tw, 1.0f); }
+    }
+    void resized() override { editor.setBounds (getLocalBounds().withHeight (22).withTrimmedLeft (8)); }
+    void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { hover = false; repaint(); }
+    void mouseUp (const juce::MouseEvent&) override { startEditing(); }
+    void startEditing()
+    {
+        if (! isEnabled()) return;
+        const double d = std::round (acc.deg() * 10) / 10;
+        editor.setText (std::abs (d - std::round (d)) < 1e-9 ? juce::String (juce::roundToInt (d)) : juce::String (d, 1), false);
+        editor.setVisible (true);
+        editor.grabKeyboardFocus();
+        editor.selectAll();
+        repaint();
+    }
+
+private:
+    void commit()
+    {
+        double v = 0;
+        if (params::parseDeg (editor.getText(), v)) { acc.setDegGesture (std::round (v * 10) / 10); if (onChange) onChange(); }
         editor.setVisible (false);
         repaint();
     }

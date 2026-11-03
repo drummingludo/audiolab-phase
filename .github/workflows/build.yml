@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Banc qualité (rotation de phase, mode Zero, alignement, latence)
+        run: |
+          clang++ -O2 -std=c++17 -I Source tests/quality_test.cpp -o qt && ./qt
+          clang++ -O2 -std=c++17 -ffp-contract=off -I Source tests/core_test.cpp -o core_test && ./core_test
+
       - name: Compiler
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release

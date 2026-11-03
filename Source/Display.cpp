@@ -14,25 +14,45 @@ PhaseDisplay::State PhaseDisplay::state() const
     st.mono = proc.isMono();
     st.bypass = p.bypass;
     st.samplesUnit = p.samples;
+    st.zero = p.zeroLatency;
     for (int c = 0; c < 2; ++c)
     {
-        st.s[c] = PhaseCore::effectiveSamples (p.delayMs[c], p.samples, st.fs);
+        st.s[c] = PhaseCore::effectiveSamples (p.delayMs[c], p.samples, st.fs, p.zeroLatency);
         st.inv[c] = p.invert[c];
+        st.rot[c] = PhaseCore::effectiveRotation (p.rotDeg[c], p.zeroLatency);
     }
-    if (st.mono) { st.s[1] = st.s[0]; st.inv[1] = st.inv[0]; }
+    if (st.mono) { st.s[1] = st.s[0]; st.inv[1] = st.inv[0]; st.rot[1] = st.rot[0]; }
     return st;
+}
+
+double PhaseDisplay::phaseOffset (const State& st)
+{
+    if (st.bypass) return 0;
+    const double pi = juce::MathConstants<double>::pi;
+    return (st.rot[1] - st.rot[0]) * pi / 180 + (st.inv[0] != st.inv[1] ? pi : 0.0);
 }
 
 String PhaseDisplay::combText (const State& st)
 {
     if (st.bypass) return U ("Bypass: original sound, no dips");
+    const double pi = juce::MathConstants<double>::pi;
     const double dt = (st.s[1] - st.s[0]) / st.fs;      // écart D − G en secondes
-    const bool opposite = st.inv[0] != st.inv[1];
+    const double psi = phaseOffset (st);                 // phase de D par rapport à G (hors retard)
+    double turns = std::fmod (psi / (2 * pi), 1.0); if (turns < 0) turns += 1;   // 0 = en phase, 0,5 = opposition
     if (std::abs (dt) < 1e-12)
-        return opposite ? U ("Total cancellation: L and R in opposition") : U ("No dips: L and R in phase");
+    {
+        if (std::abs (turns) < 1e-9 || std::abs (turns - 1) < 1e-9) return U ("No dips: L and R in phase");
+        if (std::abs (turns - 0.5) < 1e-9) return U ("Total cancellation: L and R in opposition");
+        const double db = 20 * std::log10 (std::abs (std::cos (psi / 2)));
+        return U ("No dips, level ") + params::sign (db) + params::num (std::abs (db), 1) + U (" dB (L and R ")
+             + params::fmtDeg (turns * 360 > 180 ? 360 - turns * 360 : turns * 360) + U (" apart)");
+    }
     const double spacing = 1.0 / std::abs (dt);
-    if (opposite) return U ("Lows cancelled, then a dip every ") + params::fmtHz (spacing);
-    return U ("First dip: ") + params::fmtHz (spacing / 2) + U (", then every ") + params::fmtHz (spacing);
+    // premier creux : plus petite fréquence f > 0 où la phase de D − G vaut π, ψ − 2πf·Δ ≡ π
+    double a = (psi - pi) / (2 * pi) * (dt > 0 ? 1.0 : -1.0);
+    a -= std::floor (a);
+    if (a < 1e-9 || a > 1 - 1e-9) return U ("Lows cancelled, then a dip every ") + params::fmtHz (spacing);
+    return U ("First dip: ") + params::fmtHz (a * spacing) + U (", then every ") + params::fmtHz (spacing);
 }
 
 void PhaseDisplay::updateTooltip()
@@ -150,21 +170,45 @@ void PhaseDisplay::paintTime (juce::Graphics& g, const State& st)
             info = std::abs (dms) < 1e-9 ? U ("L and R aligned")
                                          : U ("R − L offset: ") + params::fmtMs (dms) + U (" · ") + params::fmtDist (dms);
         }
+        if (st.zero && ! st.bypass) info += U (" · zero latency");
         g.setColour (p.text2);
         drawTabular (g, theme, info, 10, 400, juce::Rectangle<float> (xc - 160, 10, 320, 14), juce::Justification::centred);
     }
 
     // impulsions G et D (en bypass : le son d'origine, en gris)
     const int n = st.mono ? 1 : 2;
-    const bool same = n == 2 && std::abs (st.s[0] - st.s[1]) < 1e-9 && st.inv[0] == st.inv[1];
+    const bool same = n == 2 && std::abs (st.s[0] - st.s[1]) < 1e-9 && st.inv[0] == st.inv[1] && std::abs (st.rot[0] - st.rot[1]) < 1e-9;
     for (int c = n - 1; c >= 0; --c)
     {
         const double s = st.bypass ? 0.0 : st.s[c];
         const bool inv = st.bypass ? false : st.inv[c];
         if (c == 1 && (same || st.bypass)) continue;
         const float x = xAt (s);
-        const float tip = inv ? B - 6 : T + 6;
+        // rotation θ : l'impulsion devient cos θ · δ − sin θ · h (h ∝ 1 / t, transformée de Hilbert) : pointe raccourcie,
+        // « traînes » de part et d'autre (le spectre reste plat, seule la phase tourne)
+        const double th = st.bypass ? 0.0 : st.rot[c] * juce::MathConstants<double>::pi / 180;
+        const float amp = (float) std::cos (th) * (inv ? -1.0f : 1.0f), sn = (float) std::sin (th) * (inv ? -1.0f : 1.0f);
+        const float tip = mid - amp * (mid - (T + 6));   // +1 : en haut ; −1 : en bas ; 0 (90°) : sur la ligne de base
         const juce::Colour col = st.bypass ? p.soft : p.orange;
+        if (std::abs (sn) > 1e-3f)
+        {
+            const float half = mid - (T + 6), msPx = (R - L) / 20.0f;   // 1 ms en pixels
+            juce::Path tail;
+            for (int side = -1; side <= 1; side += 2)
+            {
+                bool first = true;
+                for (float dx = 2.0f; dx <= std::min (6 * msPx, side < 0 ? x - L : R - x); dx += 1.0f)
+                {
+                    const float ms = dx / msPx;
+                    const float v = juce::jlimit (-0.9f, 0.9f, -sn * 0.08f / ms * (float) side);   // −sin θ · h(t), h(t) ∝ 1 / t
+                    const float px = x + side * dx, py = mid - v * half;
+                    if (first) { tail.startNewSubPath (px, mid); first = false; }
+                    tail.lineTo (px, py);
+                }
+            }
+            g.setColour (col.withAlpha (0.7f));
+            g.strokePath (tail, juce::PathStrokeType (1.2f));
+        }
         if (! st.bypass)
         {
             g.setColour (col.withAlpha (0.18f)); g.fillRect (x - 2.5f, std::min (mid, tip), 5.0f, std::abs (tip - mid));
@@ -177,6 +221,7 @@ void PhaseDisplay::paintTime (juce::Graphics& g, const State& st)
         // nom du canal à côté de la pastille (avec « Ø » si la polarité est inversée)
         String name = st.bypass ? U ("Original") : st.mono ? String() : (same ? String ("L R") : String (c == 0 ? "L" : "R"));
         if (inv) name = (name.isEmpty() ? String() : name + " ") + U ("Ø");
+        if (! st.bypass && st.rot[c] > 0) name = (name.isEmpty() ? String() : name + " ") + params::fmtDeg (st.rot[c]);
         if (name.isNotEmpty())
         {
             g.setFont (theme.ui (10, 600));
@@ -227,15 +272,17 @@ void PhaseDisplay::paintSum (juce::Graphics& g, const State& st)
     // Dessin exact colonne par colonne (2 par pixel) : minimum et maximum réels de la colonne, creux et sommets
     // calculés (pas d'échantillonnage) ; quand le peigne devient plus serré que l'écran, il apparaît comme une bande.
     const double dt = st.bypass ? 0.0 : (st.s[1] - st.s[0]) / st.fs, adt = std::abs (dt);
-    const double gl = st.bypass || ! st.inv[0] ? 1.0 : -1.0, gr = st.bypass || ! st.inv[1] ? 1.0 : -1.0;
-    const bool opposite = gl * gr < 0;
+    // phase de D par rapport à G hors retard (polarités et rotations) : ψ ; somme = |1 + e^{j(ψ − 2πfΔ)}| / 2
+    const double psi = phaseOffset (st), twoPi = 2 * juce::MathConstants<double>::pi;
     auto magDb = [&] (double f)
     {
-        const double ph = 2 * juce::MathConstants<double>::pi * f * dt;
-        const double re = gl + gr * std::cos (ph), im = -gr * std::sin (ph);
+        const double ph = psi - twoPi * f * dt;
+        const double re = 1 + std::cos (ph), im = std::sin (ph);
         return 20 * std::log10 (std::max (1e-9, std::sqrt (re * re + im * im) / 2));
     };
-    // y a-t-il un point k/|Δ| + o (o = 0 ou 0,5) dans [f0, f1] ?
+    // y a-t-il dans [f0, f1] un point où la phase vaut « target » (0 : sommet, π : creux) ? f·|Δ| ≡ o (mod 1)
+    auto offsetFor = [&] (double target) { double o = (psi - target) / twoPi * (dt > 0 ? 1.0 : -1.0); return o - std::floor (o); };
+    const double oDip = offsetFor (twoPi / 2), oPeak = offsetFor (0);
     auto hits = [&] (double f0, double f1, double o) { return adt > 0 && std::floor (f1 * adt - o) >= std::ceil (f0 * adt - o); };
     const int M = juce::roundToInt ((R - L) * 2);
     juce::Path top, fill, band;
@@ -246,8 +293,8 @@ void PhaseDisplay::paintSum (juce::Graphics& g, const State& st)
         const double f1 = fMin * std::pow (fMax / fMin, std::min (1.0, (i + 0.5) / M));
         const double fc = fMin * std::pow (fMax / fMin, (double) i / M);
         double lo = std::min ({ magDb (f0), magDb (f1), magDb (fc) }), hi = std::max ({ magDb (f0), magDb (f1), magDb (fc) });
-        if (hits (f0, f1, opposite ? 0.0 : 0.5)) lo = -200;   // un creux tombe dans la colonne
-        if (hits (f0, f1, opposite ? 0.5 : 0.0)) hi = 0;      // un sommet tombe dans la colonne
+        if (hits (f0, f1, oDip)) lo = -200;   // un creux tombe dans la colonne
+        if (hits (f0, f1, oPeak)) hi = 0;     // un sommet tombe dans la colonne
         yTop[(size_t) i] = yAt (hi); yBot[(size_t) i] = yAt (lo);
         const float x = L + (R - L) * (float) i / M;
         if (i == 0) { top.startNewSubPath (x, yTop[0]); fill.startNewSubPath (x, B); fill.lineTo (x, yTop[0]); }
